@@ -3,10 +3,10 @@ import './globals.css';
 
 // Two typefaces only — Archivo (UI / signage feel) and IBM Plex Mono (reserved
 // for literal data: docket numbers, values, timestamps). Both free from Google
-// Fonts; fetched at build time by Vercel.
+// Fonts; fetched at build time by the cloud builder.
 const archivo = Archivo({
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'],
+  weight: 'variable',
   display: 'swap',
   variable: '--font-archivo',
 });
