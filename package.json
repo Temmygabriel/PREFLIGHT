@@ -1,0 +1,13 @@
+{
+  "name": "preflight-evidence",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Preflight evidence engine — deterministic market-data math (no LLM computation).",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

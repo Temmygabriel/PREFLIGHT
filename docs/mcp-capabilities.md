@@ -54,9 +54,9 @@ but are outside the MVP scope and are **not** exercised here (see §6).
 
 ## 3. Market-data tools Preflight uses (verified schemas + live results)
 
-All reads below were executed live against `BNBUSDT` on **2026-09-02T13:18:34Z**,
+All reads below were executed live against `BNBUSDT` on **2026-09-02T13:18Z / 13:25Z**,
 HTTP 200. Full raw responses are captured in the replay fixture:
-`fixtures/bnbusdt-snapshot-2026-09-02T13Z.json`.
+`fixtures/bnbusdt-market.json` (canonical, both spot + USDⓈ-M).
 
 ### Spot (category: `market`)
 
@@ -146,7 +146,8 @@ All math stays in Preflight's code from the raw response fields — the server's
 
 ## 6. Replay fixture
 
-`fixtures/bnbusdt-snapshot-2026-09-02T13Z.json` holds the verified live responses
-above (schema `preflight/replay-snapshot/1`, fields `observed_at`, `symbol`, `reads[]`
-with `tool`, `args`, `data`). Replay mode replays this bundle through the identical
-evidence pipeline when the live MCP is unreachable (judge network/DNS flakiness).
+`fixtures/bnbusdt-market.json` holds verified live responses (schema
+`preflight/replay-snapshot/2`, fields `observed_at`, `snapshots[]` with `market`,
+`symbol`, `reads[]` per read key/tool/args/data). Replay mode replays a snapshot
+through the identical evidence pipeline when the live MCP is unreachable
+(judge network/DNS flakiness). Regenerate with `node scripts/capture-snapshot.mjs SYMBOL`.
