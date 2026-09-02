@@ -2,67 +2,110 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-/* ── Preflight — the pre-flight checklist for your trades ────────────────── */
+/* ── Preflight — the pre-flight checklist for your trades ──────────────────
+   A trade idea becomes an inspection docket. Each piece of evidence is a
+   checklist line that fills in, then a verdict stamp lands: CLEARED / HOLD /
+   GROUNDED / NO CLEARANCE. Every number is computed by the engine — no model
+   decides or guesses. All three example chips resolve against the same real
+   captured BNB snapshot (spot + USDⓈ-M) so the offline demo never breaks.  */
 
 const EXAMPLES = [
-  { label: 'Buying BNB', text: 'Buying BNB here, feels like a breakout.' },
-  { label: 'Short ETHUSDT perps', text: 'Shorting ETHUSDT perpetual, looks weak.' },
-  { label: 'Long SOL on spot', text: 'SOL looks strong, going long on spot.' },
+  { label: 'Buy BNB', text: 'Buying BNB here, feels like a breakout.' },
+  { label: 'Short BNB perps', text: 'Shorting BNBUSDT perpetual, looks weak.' },
+  { label: 'Sell BNB spot', text: 'BNB spot is dropping, selling my position now.' },
 ];
 
 const METRIC_LABEL = {
-  price_move_24h: 'PRICE TREND · 24H',
-  order_book_imbalance: 'ORDER BOOK IMBALANCE',
-  volume_vs_baseline: 'VOLUME VS BASELINE',
-  funding_rate: 'FUNDING RATE',
+  price_move_24h: 'Price move · 24 h',
+  order_book_imbalance: 'Order book',
+  volume_vs_baseline: 'Volume vs baseline',
+  funding_rate: 'Funding rate',
 };
 
+// Engine evidence order (spot omits funding; futures inserts it before volume).
+const CHECK_SEQUENCE = ['price_move_24h', 'order_book_imbalance', 'funding_rate', 'volume_vs_baseline'];
+
 const VERDICT = {
-  'evidence supports the idea': { stamp: 'CLEARED', cls: 'stamp-clear', tone: 'GO — evidence lines up with your idea.' },
-  'evidence is mixed': { stamp: 'REVIEW', cls: 'stamp-mix', tone: 'Evidence points both ways. Check before you fly.' },
-  'evidence contradicts the idea': { stamp: 'HOLD', cls: 'stamp-hold', tone: 'Evidence runs against the idea. Do not fly.' },
-  'insufficient directional signal': { stamp: 'CHECK', cls: 'stamp-check', tone: 'Not enough directional signal yet.' },
+  'evidence supports the idea': { stamp: 'CLEARED', cls: 'stamp-cleared', tone: 'Cleared — the evidence lines up with your idea.' },
+  'evidence is mixed': { stamp: 'HOLD', cls: 'stamp-hold', tone: 'Hold — evidence points both ways. Do not commit yet.' },
+  'evidence contradicts the idea': { stamp: 'GROUNDED', cls: 'stamp-grounded', tone: 'Grounded — the evidence runs against your idea. Do not act.' },
+  'insufficient directional signal': { stamp: 'NO CLEARANCE', cls: 'stamp-none', tone: 'No clearance — not enough directional signal to act. Re-check before you move.' },
 };
 
 const CONF_LABEL = { High: 'HIGH', Medium: 'MEDIUM', Low: 'LOW' };
+const DOCKET_KEY = 'preflight:docketno';
 
-function badgeFor(support) {
-  if (support === 'supports') return { tag: 'PASS', cls: 'badge-pass' };
-  if (support === 'contradicts') return { tag: 'FAIL', cls: 'badge-fail' };
-  if (support && support.startsWith('activity:')) return { tag: 'CHECK', cls: 'badge-check' };
-  return { tag: 'NEUTRAL', cls: 'badge-neutral' };
+function pad4(n) { return String(n).padStart(4, '0'); }
+function readCounter() { try { return parseInt(localStorage.getItem(DOCKET_KEY) || '416', 10) || 416; } catch { return 416; } }
+function getPendingNo() { return `PF-${pad4(readCounter() + 1)}`; }
+function allocateDocketNo() { const next = readCounter() + 1; try { localStorage.setItem(DOCKET_KEY, String(next)); } catch { /* ignore */ } return `PF-${pad4(next)}`; }
+
+function isFutures(text) { return /perp|perpetual|futures|usds/i.test(text); }
+function labelFor(metric) { return METRIC_LABEL[metric] || metric.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()); }
+
+function markFor(support) {
+  if (support === 'supports') return { glyph: '✓', cls: 'm-ok', note: 'supports the idea' };
+  if (support === 'contradicts') return { glyph: '✗', cls: 'm-no', note: 'contradicts the idea' };
+  if (support && support.startsWith('activity:')) {
+    const kind = support.slice('activity:'.length);
+    if (kind === 'normal') return { glyph: '—', cls: 'm-neu', note: 'volume normal' };
+    return { glyph: '△', cls: 'm-mid', note: `volume ${kind}` };
+  }
+  return { glyph: '—', cls: 'm-neu', note: 'neutral' };
 }
 
-function pretty(support) {
-  if (support === 'supports') return 'supports the idea';
-  if (support === 'contradicts') return 'contradicts the idea';
-  if (support && support.startsWith('activity:')) return support.replace('activity:', 'activity: ');
-  return 'neutral';
+function busyChecks(text) {
+  const futures = isFutures(text);
+  return CHECK_SEQUENCE.filter((m) => futures || m !== 'funding_rate').map(labelFor);
+}
+
+function sourceNote(result) {
+  const { source, liveError, brief, idea } = result;
+  const at = new Date(brief.observedAt).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  if (source === 'live') return `Live read via Binance Agent OS MCP, observed ${at}. The engine reads and computes; no model decided this.`;
+  if (liveError) return `Couldn't reach live market data — showing a replay docket instead. Real ${brief.symbol} ${idea.marketLabel} snapshot captured from Binance via Agent OS MCP, ${at}. No model decided this.`;
+  return `No live data key set — replaying a real ${brief.symbol} ${idea.marketLabel} snapshot captured from Binance via Agent OS MCP, ${at}. The engine computes; no model decided this.`;
+}
+
+function fmtSupported(sup) {
+  if (!Array.isArray(sup)) return '';
+  const names = sup.map((s) => {
+    if (typeof s === 'string') return s;
+    return `${String(s.symbol || '').replace(/USDT$/, '')} (${s.market || 'spot'})`;
+  }).filter(Boolean);
+  return `Captured on this build: ${names.join(', ') || 'none yet'}.`;
 }
 
 export default function Page() {
   const [text, setText] = useState(EXAMPLES[0].text);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState(null);   // ok response
-  const [error, setError] = useState(null);     // {message}
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [docketNo, setDocketNo] = useState('');
   const [history, setHistory] = useState([]);
+  const [pending, setPending] = useState('');
   const autoRan = useRef(false);
+  const mounted = useRef(true);
 
   useEffect(() => {
+    mounted.current = true;
     try {
       const h = JSON.parse(localStorage.getItem('preflight:history') || '[]');
-      if (Array.isArray(h)) setHistory(h.slice(0, 6));
+      if (Array.isArray(h)) setHistory(h.slice(0, 8));
     } catch { /* ignore */ }
+    setPending(getPendingNo());
     if (!autoRan.current) {
       autoRan.current = true;
-      run(EXAMPLES[0].text, 'auto');
+      run(EXAMPLES[0].text);
     }
+    return () => { mounted.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const pushHistory = useCallback((idea, res) => {
+  const pushHistory = useCallback((no, idea, res) => {
     const entry = {
-      text: idea.slice(0, 80),
+      no,
+      text: idea.slice(0, 64),
       base: res?.brief?.symbol || '',
       direction: res?.brief?.direction || '',
       verdict: res?.brief?.verdict || 'error',
@@ -70,13 +113,16 @@ export default function Page() {
       at: Date.now(),
     };
     setHistory((prev) => {
-      const next = [entry, ...prev].slice(0, 6);
+      const next = [entry, ...prev].slice(0, 8);
       try { localStorage.setItem('preflight:history', JSON.stringify(next)); } catch { /* ignore */ }
       return next;
     });
   }, []);
 
-  const run = useCallback(async (idea, mode = 'auto') => {
+  const run = useCallback(async (idea) => {
+    const no = allocateDocketNo();
+    setDocketNo(no);
+    setPending(getPendingNo());
     setBusy(true);
     setError(null);
     setResult(null);
@@ -84,181 +130,216 @@ export default function Page() {
       const res = await fetch('/api/check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: idea, mode }),
+        body: JSON.stringify({ text: idea, mode: 'auto' }),
       });
       const data = await res.json();
+      if (!mounted.current) return;
       if (!res.ok || !data.ok) {
-        setError({ message: data.message || 'Preflight could not complete the check.' });
-        pushHistory(idea, null);
+        setError({ message: data.message || 'Preflight could not complete the check.', supported: data.supported });
+        pushHistory(no, idea, null);
+        setBusy(false);
         return;
       }
       setResult(data);
-      pushHistory(idea, data);
+      pushHistory(no, idea, data);
+      setBusy(false);
     } catch (e) {
+      if (!mounted.current) return;
       setError({ message: 'Network error — could not reach the Preflight API.' });
-    } finally {
+      pushHistory(no, idea, null);
       setBusy(false);
     }
   }, [pushHistory]);
 
   const v = result ? (VERDICT[result.brief.verdict] || VERDICT['insufficient directional signal']) : null;
+  const evidence = result ? result.brief.evidence : [];
+  const rowMs = 420;
+  const stampDelay = evidence.length * rowMs + 140;
 
   return (
     <main className="wrap">
-      {/* ── Header ── */}
-      <header className="fadeup" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 18, flexWrap: 'wrap' }}>
+      {/* masthead */}
+      <header className="mast fadeup">
         <div>
           <div className="wordmark">Preflight</div>
-          <p className="tagline" style={{ maxWidth: 520 }}>
-            The pre-flight checklist for your trades. Before an agent moves your money, Preflight reads the
-            market and stamps a verdict — <b style={{ color: 'var(--ink)' }}>computed in code, never guessed.</b>
-          </p>
+          <div className="sub-mark">verify before you act</div>
         </div>
-        <div className="eyebrow" style={{ textAlign: 'right' }}>
-          BINANCE AGENT OS<br />TRACK A
-        </div>
+        <div className="mast-meta mono">BINANCE AGENT OS<br />TRACK A · AGENT CREATION</div>
       </header>
 
-      {/* ── Input ── */}
-      <section className="panel panel-pad fadeup" style={{ marginTop: 26 }}>
-        <div className="eyebrow">01 · Trade idea</div>
+      <p className="lede fadeup">
+        The pre-flight checklist for your trades. Before an agent moves your money, Preflight
+        reads the market and stamps a verdict — <b>computed in code, never guessed.</b>
+      </p>
+
+      {/* ── input docket ── */}
+      <section className="docket fadeup">
+        <div className="docket-head">
+          <div className="docket-id mono">DOCKET <span className="mono">{pending || docketNo}</span></div>
+          <div className="docket-status">Unfiled</div>
+        </div>
+        <label className="field-label" htmlFor="idea">Trade idea</label>
         <textarea
+          id="idea"
           className="idea-input"
-          style={{ marginTop: 12, minHeight: 88 }}
+          style={{ minHeight: 84 }}
           value={text}
-          placeholder='Describe the move you want to make, e.g. "Buying BNB, breaking out".'
+          placeholder='Describe the move you want to make — e.g. "Buying BNB, breaking out".'
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') run(text); }}
         />
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 14, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 16, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {EXAMPLES.map((ex) => (
-              <button key={ex.label} type="button" className="btn-ghost" onClick={() => { setText(ex.text); setResult(null); }}>
+              <button key={ex.label} type="button" className="chip-btn" disabled={busy} onClick={() => { setText(ex.text); run(ex.text); }}>
                 {ex.label}
               </button>
             ))}
           </div>
           <button type="button" className="btn" disabled={busy || !text.trim()} onClick={() => run(text)}>
-            {busy ? 'RUNNING CHECKLIST…' : 'RUN PREFLIGHT'}
+            {busy ? 'Running Preflight check…' : 'Run Preflight Check'}
           </button>
         </div>
       </section>
 
-      {/* ── Loading ── */}
+      {/* ── busy docket ── */}
       {busy && (
-        <section className="panel panel-pad fadeup" style={{ marginTop: 18 }}>
-          <div className="eyebrow">02 · Running the checklist</div>
-          <div className="muted" style={{ fontSize: 13, lineHeight: 1.9, marginTop: 8 }}>
-            <div><span className="blink">▸</span> pulling {text.includes('perpetual') || text.includes('futures') ? 'futures' : 'spot'} market data…</div>
-            <div><span className="blink">▸</span> price trend · order book · volume{/* funding shown for futures */}</div>
-            <div><span className="blink">▸</span> computing contradiction check &amp; confidence</div>
+        <section className="docket fadeup">
+          <div className="docket-head">
+            <div className="docket-id mono">DOCKET <span className="mono">{docketNo || pending}</span></div>
+            <div className="docket-status docket-status-run">In progress</div>
+          </div>
+          <div className="docket-meta"><span className="mono">Reading market snapshot…</span></div>
+          <div>
+            {busyChecks(text).map((name, i) => (
+              <div className="check-row" key={name}>
+                <span className="check-num">{i + 1}</span>
+                <span className="check-name">{name}</span>
+                <span className="check-state pulse">checking…</span>
+              </div>
+            ))}
           </div>
         </section>
       )}
 
-      {/* ── Result ── */}
-      {result && v && (
-        <section key={result.brief.computedAt} className="fadeup" style={{ marginTop: 18 }}>
-          {/* identity strip */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-            <span className="chip"><b>{result.brief.symbol}</b></span>
-            <span className="pill pill-buy" style={result.brief.direction === 'sell' ? { color: 'var(--red)', borderColor: 'rgba(255,106,95,.45)' } : undefined}>
-              {result.brief.direction === 'buy' ? 'BUY' : 'SELL'}
+      {/* ── error docket ── */}
+      {error && !busy && (
+        <section className="docket fadeup">
+          <div className="docket-head">
+            <div className="docket-id mono">DOCKET <span className="mono">{docketNo}</span></div>
+            <div className="docket-status docket-status-stop">No clearance</div>
+          </div>
+          <div className="err-title">Preflight could not run that check.</div>
+          <div className="err-msg">{error.message}</div>
+          {error.supported && <div className="err-supp mono">{fmtSupported(error.supported)}</div>}
+        </section>
+      )}
+
+      {/* ── result docket ── */}
+      {result && v && !busy && (
+        <section key={docketNo} className="docket fadeup">
+          <div className="docket-head">
+            <div className="docket-id mono">DOCKET <span className="mono">{docketNo}</span></div>
+            <div className={`docket-status ${result.source === 'live' ? 'docket-status-go' : ''}`}>Inspected</div>
+          </div>
+
+          <div className="docket-meta">
+            <span className="mono">
+              <b>{result.brief.symbol}</b> · {result.idea.marketLabel} ·{' '}
+              <b style={{ color: result.brief.direction === 'sell' ? 'var(--grounded)' : 'var(--cleared)' }}>
+                {result.brief.direction.toUpperCase()}
+              </b>
             </span>
-            <span className="chip">{result.idea.marketLabel}</span>
-            <span className={result.source === 'live' ? 'badge badge-live' : 'badge badge-replay'} style={{ marginLeft: 'auto' }}>
-              {result.source === 'live' ? '● LIVE DATA' : '◌ REPLAYED SNAPSHOT'}
+            <span className={result.source === 'live' ? 'src-live' : 'src-replay'}>
+              {result.source === 'live' ? '● LIVE' : '◌ REPLAYED'}
             </span>
           </div>
 
-          {/* stamp + verdict */}
-          <div className="panel panel-pad" style={{ display: 'flex', alignItems: 'center', gap: 26, flexWrap: 'wrap' }}>
-            <div className={`stamp ${v.cls}`}>{v.stamp}</div>
-            <div style={{ flex: 1, minWidth: 220 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '0.02em' }}>{v.tone}</div>
-              <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>
-                {result.brief.confidenceBreakdown.agree} agree · {result.brief.confidenceBreakdown.neutral} neutral · {result.brief.confidenceBreakdown.disagree} disagree
-              </div>
-              <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>
-                confidence <b style={{ color: 'var(--ink)' }}>{CONF_LABEL[result.brief.confidence] || result.brief.confidence}</b> — computed by code, never guessed
-              </div>
-            </div>
+          {/* checklist */}
+          <div>
+            {evidence.map((e, i) => {
+              const m = markFor(e.support);
+              return (
+                <div className="check-row resolve" key={e.metric} style={{ animationDelay: `${i * rowMs}ms` }}>
+                  <span className="check-num">{i + 1}</span>
+                  <span className="check-name">{labelFor(e.metric)}</span>
+                  <span className="val-col">
+                    <span className="val">{e.result}</span>
+                    <span className="support-note">{m.note}</span>
+                  </span>
+                  <span className={`mark ${m.cls}`}>{m.glyph}</span>
+                </div>
+              );
+            })}
           </div>
 
-          {/* contradiction alert */}
+          {/* contradiction flag */}
           {result.brief.contradiction.flag && (
-            <div style={{ marginTop: 12, padding: '12px 16px', borderRadius: 10, background: 'var(--red-bg)', border: '1px solid rgba(255,106,95,.4)', color: 'var(--red)', fontSize: 13.5 }}>
-              ⚠ CONTRADICTION FLAGGED — {result.brief.contradiction.detail}
+            <div className="flag">
+              <b>Contradiction flagged —</b> {result.brief.contradiction.detail}
             </div>
           )}
 
-          {/* checklist */}
-          <div className="panel panel-pad" style={{ marginTop: 14 }}>
-            <div className="eyebrow">03 · Evidence checklist</div>
-            <div style={{ marginTop: 10 }}>
-              {result.brief.evidence.map((e) => {
-                const b = badgeFor(e.support);
-                return (
-                  <div className="row" key={e.metric}>
-                    <span className="metric">{METRIC_LABEL[e.metric] || e.metric.replace(/_/g, ' ').toUpperCase()}</span>
-                    <span className="value">{e.result}</span>
-                    <span className={`badge ${b.cls}`}>{b.tag}</span>
-                    <span className="muted" style={{ width: 150, textAlign: 'left', fontSize: 11.5 }}>{pretty(e.support)}</span>
-                  </div>
-                );
-              })}
+          {/* verdict + stamp */}
+          <div className="verdict">
+            <div className="verdict-copy">
+              <div className="tone">{v.tone}</div>
+              <div className="fact mono">
+                Confidence <b>{CONF_LABEL[result.brief.confidence] || result.brief.confidence}</b> — computed by code, never guessed.
+                <br />
+                {result.brief.confidenceBreakdown.agree} agree · {result.brief.confidenceBreakdown.neutral} neutral ·{' '}
+                {result.brief.confidenceBreakdown.disagree} disagree of {evidence.length} checks
+              </div>
             </div>
-            <hr className="hr" />
-            <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.6 }}>
-              Data: {result.source === 'live' ? 'live via Binance Agent OS MCP' : `real ${result.brief.symbol} snapshot captured from Binance via Agent OS MCP, replayed`} · observed {new Date(result.brief.observedAt).toISOString()}.{' '}
-              The engine reads and computes; no model decided this.
+            <div className="stamp-wrap">
+              <div
+                className={`stamp ${v.cls} ${v.stamp.length > 9 ? 'stamp-long ' : ''}land`}
+                style={{ animationDelay: `${stampDelay}ms` }}
+              >
+                {v.stamp}
+              </div>
+              <span className="stamp-cap mono">stamped {new Date(result.brief.computedAt).toLocaleTimeString()}</span>
             </div>
           </div>
 
-          {/* explanation */}
-          <div className="panel panel-pad" style={{ marginTop: 14 }}>
-            <div className="eyebrow">04 · Plain-language brief</div>
-            <p className="muted" style={{ fontSize: 13.5, lineHeight: 1.8, margin: '10px 0 0', whiteSpace: 'pre-line', color: 'var(--ink)' }}>
-              {result.explanation.text}
-            </p>
+          {/* plain-language brief */}
+          <div className="explain">
+            <span className="field-label">Inspection brief</span>
+            <p>{result.explanation.text}</p>
           </div>
+
+          <div className="docket-note mono">{sourceNote(result)}</div>
         </section>
       )}
 
-      {/* ── Error ── */}
-      {error && (
-        <section className="panel panel-pad fadeup" style={{ marginTop: 18, borderColor: 'rgba(255,106,95,.4)' }}>
-          <div style={{ color: 'var(--red)', fontSize: 14, fontWeight: 700 }}>NO GO</div>
-          <div className="muted" style={{ fontSize: 13.5, marginTop: 8 }}>{error.message}</div>
-        </section>
-      )}
-
-      {/* ── How it works + history ── */}
-      {!busy && !result && (
-        <section className="panel panel-pad fadeup" style={{ marginTop: 18 }}>
-          <div className="eyebrow">The 10-second pitch</div>
-          <ol className="muted" style={{ fontSize: 13, lineHeight: 2, margin: '10px 0 0', paddingLeft: 20 }}>
-            <li>You state a trade idea in plain language — as you would to an agent.</li>
-            <li>Preflight pulls real market data and runs four deterministic checks: price trend, order book, volume, funding.</li>
-            <li>It stamps <b style={{ color: 'var(--ink)' }}>CLEARED</b>, <b style={{ color: 'var(--amber)' }}>REVIEW</b>, or <b style={{ color: 'var(--red)' }}>HOLD</b> — and tells you exactly which evidence contradicted you.</li>
+      {/* ── how it works (idle) ── */}
+      {!busy && !result && !error && (
+        <section className="pitch fadeup">
+          <div className="pitch-title">The 10-second pitch</div>
+          <ol>
+            <li><span className="n mono">1</span><span>You state a trade idea in plain language — as you would to an agent.</span></li>
+            <li><span className="n mono">2</span><span>Preflight reads the market and runs four deterministic checks: <b>price trend, order book, volume, funding</b>.</span></li>
+            <li><span className="n mono">3</span><span>It stamps <b style={{ color: 'var(--on-dark)' }}>CLEARED</b>, <b style={{ color: 'var(--hold-dark)' }}>HOLD</b>, or <b style={{ color: 'var(--grounded-dark)' }}>GROUNDED</b> — and tells you which evidence contradicted you.</span></li>
           </ol>
         </section>
       )}
 
+      {/* ── logbook ── */}
       {history.length > 0 && (
-        <section className="panel panel-pad fadeup" style={{ marginTop: 14 }}>
-          <div className="eyebrow">Recent checks</div>
-          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <section className="ledger-sec fadeup">
+          <div className="ledger-title">Logbook</div>
+          <div>
             {history.map((h, i) => {
               const vv = VERDICT[h.verdict];
+              const stampWord = h.verdict === 'error' ? 'ERR' : vv ? vv.stamp : '—';
+              const cls = !vv ? 'v-none' : vv.stamp === 'CLEARED' ? 'v-clear' : vv.stamp === 'HOLD' ? 'v-hold' : vv.stamp === 'GROUNDED' ? 'v-grounded' : 'v-none';
               return (
-                <button key={`${h.at}-${i}`} type="button" className="btn-ghost" style={{ textAlign: 'left', width: '100%', borderRadius: 8, display: 'flex', gap: 10, alignItems: 'center' }}
+                <button key={`${h.no || h.at}-${i}`} type="button" className="ledger-row"
                   onClick={() => { setText(h.text); run(h.text); }}>
-                  <span style={{ color: vv ? (vv.cls === 'stamp-hold' ? 'var(--red)' : vv.cls === 'stamp-mix' ? 'var(--amber)' : 'var(--green)') : 'var(--muted)', fontWeight: 800, width: 54 }}>
-                    {h.verdict === 'error' ? 'ERR' : vv ? vv.stamp : '—'}
-                  </span>
-                  <span className="muted" style={{ flex: 1, fontSize: 12.5 }}>{h.text}</span>
-                  <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{new Date(h.at).toLocaleTimeString()}</span>
+                  <span className="l-no">{h.no || 'PF-····'}</span>
+                  <span className="l-idea">{h.base} · {h.text}</span>
+                  <span className="l-time">{new Date(h.at).toLocaleTimeString()}</span>
+                  <span className={`l-v ${cls}`}>{stampWord}</span>
                 </button>
               );
             })}
@@ -267,9 +348,10 @@ export default function Page() {
       )}
 
       <footer className="foot">
-        <b>Preflight</b> — evidence before execution. Built for the Binance Agent OS Mini Hackathon (Track A). The verdict,
-        confidence, and every number are computed deterministically by the engine; no language model decides or guesses them.
-        No keys required. Replay snapshots captured from the real Binance MCP keep this demo honest even when the network is not.
+        <b>Preflight</b> — evidence before execution. Built for the Binance Agent OS Mini Hackathon
+        (Track A). The verdict, confidence, and every number are computed deterministically by the
+        engine; no language model decides or guesses them. No keys required — replay snapshots
+        captured from the real Binance MCP keep the demo honest even when the network is not.
       </footer>
     </main>
   );

@@ -10,24 +10,29 @@ Built for the Binance Agent OS Mini Hackathon. Read-only MVP: consumes **Market 
 via the Binance Agent OS MCP server; no trading scope required.
 
 > Status: Web app live on Vercel — type a trade idea, get a checklist + a verdict stamp
-> (CLEARED / REVIEW / HOLD). Live Binance Agent OS MCP reads when `PREFLIGHT_MCP_TOKEN` is
-> set; automatic replay of real captured snapshots otherwise. Deterministic engine + tests.
+> (CLEARED / HOLD / GROUNDED / NO CLEARANCE) on an inspection docket. Live Binance
+> Agent OS MCP reads when `PREFLIGHT_MCP_TOKEN` is set; automatic replay of real
+> captured snapshots otherwise. Deterministic engine + tests; GitHub Actions CI +
+> Vercel build on every push.
 
 ## The pitch (30 s)
 
 Aviation does it before every takeoff: **run the checklist.** Preflight is the pre-flight
-checklist for a trade. State an idea ("Buying BNB") → it pulls the market and runs four
-deterministic checks — **price trend, order book, volume, funding** → stamps
-**CLEARED / REVIEW / HOLD** and shows you exactly which evidence contradicted you. Every
-number is computed by the engine; **no model decides or guesses.**
+checklist for a trade — rendered as a physical inspection docket. State an idea
+("Buying BNB") → it pulls the market and runs four deterministic checks —
+**price trend, order book, volume, funding** → stamps **CLEARED / HOLD / GROUNDED**
+and shows you exactly which evidence contradicted you. Every number is computed by
+the engine; **no model decides or guesses.**
 
 ## Web app (deploy: Vercel)
 
 ```bash
-npm install        # once (or let Vercel do it in the cloud)
+npm install        # once (or let Vercel/CI do it in the cloud — keep local light)
 npm run dev        # local dev at http://localhost:3000
 npm test           # engine + web-core tests (node --test, offline)
 ```
+Every push to `main` runs GitHub Actions (`npm test` + `npm run build`) and triggers a
+Vercel preview build — no need to build Next locally.
 
 - `app/` — Next.js UI (checklist + verdict-stamp identity).
 - `app/api/check/route.js` → `lib/checkIdea.mjs` — one endpoint: idea text → evidence
