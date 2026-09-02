@@ -28,6 +28,19 @@ test('extractor: sell ADA spot', () => {
   assert.equal(r.market, 'spot');
 });
 
+test('extractor: spelled-out alt perp not in whitelist (HYPEUSDT) resolves', () => {
+  const r = extractTradeIdea('Shorting HYPEUSDT perpetual feels like a good idea now');
+  assert.equal(r.symbol, 'HYPE');
+  assert.equal(r.direction, 'sell');
+  assert.equal(r.market, 'futures_usds');
+});
+
+test('extractor: bare high-cap alt word (HYPE) resolves without a suffix', () => {
+  const r = extractTradeIdea('hype is strong, buy it');
+  assert.equal(r.symbol, 'HYPE');
+  assert.equal(r.direction, 'buy');
+});
+
 test('extractor: gibberish yields null symbol (no hallucination)', () => {
   const r = extractTradeIdea('the weather is nice today in berlin');
   assert.equal(r.symbol, null);

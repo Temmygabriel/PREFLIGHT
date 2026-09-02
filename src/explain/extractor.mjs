@@ -1,27 +1,52 @@
 // Deterministic natural-language → structured idea extractor.
 // Free text trade ideas → { symbol, direction, market, size }. Rule-based so it is
-// testable and never hallucinates a symbol the engine can't check. LLM extraction
-// can layer on top later; this keeps the core honest.
+// testable and honest: it never *guesses* a symbol the market check can't verify.
+//
+// Honesty rule, two layers:
+//   1. A SPELLED-OUT market (SYMBOL + a quote suffix, e.g. HYPEUSDT) is honoured
+//      for ANY base — no whitelist gate. The user typed an explicit ticker; if the
+//      market doesn't exist the live read says so ("no such market"), which is the
+//      honest outcome, not a guess.
+//   2. A BARE WORD is only treated as a ticker if it is a known Binance base
+//      (KNOWN_BASES below). That keeps ordinary English ("the weather is nice in
+//      berlin") from being mistaken for a symbol. Best-effort coverage — anything
+//      missing is always reachable by spelling it: "HYPEUSDT".
+// The engine's own market lookup is the final guard in both cases.
 
 const QUOTE_SUFFIXES = ['USDT', 'USDC', 'BUSD', 'FDUSD', 'TUSD', 'USDP', 'BTC', 'ETH', 'BNB', 'EUR', 'TRY', 'DAI', 'PAX'];
+// Known Binance USDⓈ-M bases (spot and perpetual names overlap). Not exhaustive by
+// design — the suffixed-token rule above backstops anything not listed here.
 const KNOWN_BASES = new Set([
+  // Blue chips & large caps
   'BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'DOGE', 'ADA', 'AVAX', 'MATIC', 'POL', 'LINK', 'DOT',
   'SHIB', 'PEPE', 'LTC', 'BCH', 'NEAR', 'APT', 'ARB', 'OP', 'SUI', 'TIA', 'INJ', 'FIL', 'ATOM',
   'UNI', 'AAVE', 'MKR', 'LDO', 'RUNE', 'GALA', 'SAND', 'MANA', 'AXS', 'CRV', 'ENS', 'FTM', 'S',
   'WLD', 'SEI', 'JUP', 'PYTH', 'ONDO', 'STRK', 'HBAR', 'VET', 'TRX', 'TON', 'T', 'ZK', 'BOME',
+  'HYPE', 'TRUMP', 'IP', 'BERA', 'KAITO', 'EIGEN', 'ENA', 'PENGU', 'TAO', 'KAS', 'RENDER', 'RNDR',
+  'WIF', 'BONK', 'FLOKI', 'TURBO', 'AR', 'ETC', 'XLM', 'XMR', 'ALGO', 'ZEC', 'DASH', 'NEO',
+  'XTZ', 'IOTA', 'THETA', 'EGLD', 'FLOW', 'MINA', 'KSM', 'FET', 'AGIX', 'OCEAN', 'GRT', 'IMX',
+  'SNX', 'COMP', 'YFI', 'SUSHI', 'CAKE', 'DYDX', 'BLUR', 'PENDLE', 'AIOZ', 'ZRO', 'BLAST',
+  'LISTA', 'BB', 'NOT', 'DOGS', 'HMSTR', 'CATI', 'NEIRO', 'W', 'JASMY', 'STORJ', 'MASK',
+  'SLP', 'CFX', '1INCH', 'CRV', 'GNO', 'RPL', 'ANKR', 'BAND', 'OCEAN', 'DENT', 'HOT',
 ]);
 
 function norm(s) {
   return s.toUpperCase().replace(/[^A-Z0-9]/g, ' ');
 }
 
-/** Strip a known quote suffix to find the base (e.g. BNBUSDT -> BNB). */
+/**
+ * Strip a known quote suffix to find the base (e.g. BNBUSDT -> BNB).
+ * Any base is accepted here — a spelled-out SYMBOLUSDT is unambiguous user input,
+ * and the engine's live/exchange check is the guard against a non-existent market.
+ */
 function baseOf(token) {
   const t = token.toUpperCase();
   for (const q of QUOTE_SUFFIXES) {
     if (t.endsWith(q) && t.length > q.length) {
       const base = t.slice(0, -q.length);
-      if (KNOWN_BASES.has(base)) return base;
+      // A suffix-within-a-base edge: only strip once, and don't reduce a base to
+      // empty. e.g. ETHUSDT -> ETH (good); USDT alone is STOPped earlier anyway.
+      if (base.length >= 2 && /^[A-Z0-9]+$/.test(base)) return base;
     }
   }
   return null;
@@ -50,12 +75,13 @@ export function extractTradeIdea(text) {
   let symbol = null;
   const candidates = [];
   for (const word of norm(text).split(/\s+/)) {
-    if (word.length < 2 || word.length > 10) continue;
+    if (word.length < 2 || word.length > 16) continue;
     if (STOP.has(word)) continue;
     if (!/^[A-Z][A-Z0-9]*$/.test(word)) continue;
     candidates.push(word);
   }
-  // Prefer a token with a quote suffix, stripping it to its base; else a known base.
+  // Prefer a spelled-out market token (SYMBOLUSDT), stripped to its base — any base
+  // counts; the live read will confirm the market. Else a known bare base.
   const suffixed = candidates.find((c) => baseOf(c));
   const known = candidates.find((c) => KNOWN_BASES.has(c));
   symbol = suffixed ? baseOf(suffixed) : known || null;
