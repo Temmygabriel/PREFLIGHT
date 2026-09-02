@@ -16,7 +16,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
+// Repo root, computed with path ops only. (NOT `new URL('../../', import.meta.url)`:
+// webpack special-cases that as an asset reference and fails the Vercel build with
+// "Can't resolve '../../'".) Correct under plain Node for CLI/tests; if a bundler
+// rewrites import.meta.url, the .env lookup below simply no-ops — harmless, since
+// the web route never calls the LLM.
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(HERE, '..', '..');
 
 /** Load <repo>/.env into process.env if present, never overriding real env. */
 function loadDotEnv() {
