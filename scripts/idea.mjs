@@ -1,7 +1,10 @@
 // Full Day-3 pipeline demo: a trade idea sentence → structured idea → evidence
 // brief (replay by default) → plain-language explanation.
 // Usage:
-//   node scripts/idea.mjs "Thinking about buying BNB here, breaking out" [--llm] [--live]
+//   node scripts/idea.mjs "Thinking about buying BNB here, breaking out" [--live] [--llm]
+// The explanation is the deterministic template by default (zero network, no API
+// key). Pass --llm to use a real LLM — only works if a key is configured via
+// PREFLIGHT_LLM_API_KEY / ANTHROPIC_API_KEY or a repo .env file.
 import { extractTradeIdea } from '../src/explain/extractor.mjs';
 import { explain } from '../src/explain/explainer.mjs';
 import { runEvidenceFromSnapshot } from '../src/evidence/pipeline.mjs';
@@ -50,7 +53,8 @@ for (const e of brief.evidence) {
 console.log(`verdict: ${brief.verdict} · confidence: ${brief.confidence} · contradiction: ${brief.contradiction.flag ? 'FLAGGED' : 'none'}`);
 if (brief.contradiction.detail) console.log(`  ↳ ${brief.contradiction.detail}`);
 
-const explanation = await explain(brief, { mode: llm ? 'llm' : 'auto' });
+// Template voice by default (keyless, offline). --llm opts into a real model.
+const explanation = await explain(brief, { mode: llm ? 'llm' : 'template' });
 console.log(`\n--- EXPLANATION (${explanation.mode})${explanation.model ? ' · ' + explanation.model : ''} ---`);
 if (explanation.error) console.log(`(LLM unavailable, used template: ${explanation.error})`);
 console.log(explanation.text);
