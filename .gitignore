@@ -1,6 +1,7 @@
 # ── Local-only files (never pushed) ─────────────────────────
-# Build plan + memory + recording kit are kept on this machine only.
+# Build plan + memory + recording kit + design brief stay on this machine only.
 preflight-build-plan.md
+preflight-design-spec.md
 memory/
 demo/
 

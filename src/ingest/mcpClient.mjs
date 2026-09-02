@@ -25,8 +25,10 @@ export function resolveToken() {
   return null;
 }
 
-/** Create a bound client: handshake once, then client.callTool(name, args). */
-export async function connect({ token = resolveToken(), url = MCP_URL } = {}) {
+/** Create a bound client: handshake once, then client.callTool(name, args).
+ *  Optional `signal` (AbortSignal) aborts in-flight fetches (used by serverless). */
+export async function connect(opts = {}) {
+  const { token = resolveToken(), url = MCP_URL, signal } = opts;
   if (!token) throw new Error('No MCP bearer token. Set PREFLIGHT_MCP_TOKEN or run `claude mcp login binance-mcp-server`.');
   let sessionId = null;
 
@@ -42,6 +44,7 @@ export async function connect({ token = resolveToken(), url = MCP_URL } = {}) {
       method: 'POST',
       headers,
       body: JSON.stringify({ jsonrpc: '2.0', id: Math.floor(Math.random() * 1e9), method, params }),
+      signal,
     });
     if (!sessionId && res.headers.get('mcp-session-id')) sessionId = res.headers.get('mcp-session-id');
     const text = await res.text();

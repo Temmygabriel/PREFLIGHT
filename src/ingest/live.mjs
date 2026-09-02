@@ -18,7 +18,8 @@ const READS = {
   ],
 };
 
-/** Fetch a live snapshot for a symbol + market. Returns { market, symbol, observedAt, reads }. */
+/** Fetch a live snapshot for a symbol + market. Returns { market, symbol, observedAt, reads }.
+ *  opts.signal (AbortSignal) lets a caller time out in-flight MCP reads. */
 export async function fetchMarketSnapshot({ symbol, market }, opts = {}) {
   const plan = READS[market];
   if (!plan) throw new Error(`Unsupported market "${market}" (use "spot" or "futures_usds").`);
