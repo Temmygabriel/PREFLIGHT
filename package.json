@@ -1,11 +1,25 @@
 {
-  "name": "preflight-evidence",
+  "name": "preflight",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Preflight evidence engine — deterministic market-data math (no LLM computation).",
+  "description": "Preflight — the pre-flight checklist for your trades. Deterministic evidence briefs before an agent moves money.",
   "scripts": {
+    "dev": "next dev",
+    "prebuild": "node scripts/build-snapdata.mjs",
+    "build": "next build",
+    "start": "next start",
     "test": "node --test"
+  },
+  "dependencies": {
+    "next": "^15.1.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "postcss": "^8.5.1",
+    "tailwindcss": "^4.0.0"
   },
   "engines": {
     "node": ">=20"

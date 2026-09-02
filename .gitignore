@@ -1,7 +1,8 @@
 # ── Local-only files (never pushed) ─────────────────────────
-# Build plan + memory are kept on this machine only.
+# Build plan + memory + recording kit are kept on this machine only.
 preflight-build-plan.md
 memory/
+demo/
 
 # ── Node ────────────────────────────────────────────────────
 node_modules/
