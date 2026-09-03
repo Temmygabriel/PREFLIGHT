@@ -244,7 +244,7 @@ export default function Page() {
           <div className="err-title">Preflight could not run that check.</div>
           <div className="err-msg">{error.message}</div>
           {error.code === 'live_failed' && error.marketMissing && (
-            <div className="err-supp mono">Preflight already tried both spot and futures — Binance reports no {error.symbol || 'this pair'} market. Double-check the ticker, or add “spot” / “perp” if the pair exists on only one market.</div>
+            <div className="err-supp mono">Preflight already tried both spot and futures — Binance reports no {error.symbol || 'this pair'} market. Double-check the ticker (spell the exact symbol, e.g. “HYPEUSDT”).</div>
           )}
           {error.code === 'live_failed' && !error.marketMissing && (
             <div className="err-supp mono">The live feed could not be read right now. Re-run the check, or click the example chips — those replay real captured snapshots and always work.</div>
