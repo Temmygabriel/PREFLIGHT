@@ -6,8 +6,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
    A trade idea becomes an inspection docket. Each piece of evidence is a
    checklist line that fills in, then a verdict stamp lands: CLEARED / HOLD /
    GROUNDED / NO CLEARANCE. Every number is computed by the engine — no model
-   decides or guesses. All three example chips resolve against the same real
-   captured BNB snapshot (spot + USDⓈ-M) so the offline demo never breaks.  */
+   decides or guesses. The example chips (and the auto-run on load) run in
+   replay mode against a real captured BNB snapshot so the three showcase
+   stamps are always the same; typing your own idea runs LIVE first, with
+   replay as the honest fallback when the feed is unreachable.  */
 
 const EXAMPLES = [
   { label: 'Buy BNB', text: 'Buying BNB here, feels like a breakout.' },
@@ -62,12 +64,17 @@ function busyChecks(text) {
   return CHECK_SEQUENCE.filter((m) => futures || m !== 'funding_rate').map(labelFor);
 }
 
-function sourceNote(result) {
+function sourceNote(result, mode) {
   const { source, liveError, brief, idea } = result;
   const at = new Date(brief.observedAt).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const tag = `${brief.symbol} ${idea.marketLabel} snapshot captured from Binance via Agent OS MCP`;
   if (source === 'live') return `Live read via Binance Agent OS MCP, observed ${at}. The engine reads and computes; no model decided this.`;
-  if (liveError) return `Couldn't reach live market data — showing a replay docket instead. Real ${brief.symbol} ${idea.marketLabel} snapshot captured from Binance via Agent OS MCP, ${at}. No model decided this.`;
-  return `No live data key set — replaying a real ${brief.symbol} ${idea.marketLabel} snapshot captured from Binance via Agent OS MCP, ${at}. The engine computes; no model decided this.`;
+  const why = mode === 'replay'
+    ? `Deterministic replay — the showcase reads the same real ${tag} every time. Type your own idea for a live read.`
+    : liveError
+      ? `Couldn't reach live market data — showing a replay docket instead. Real ${tag}.`
+      : `No live data key set — replaying a real ${tag}.`;
+  return `${why} The engine computes; no model decided this.`;
 }
 
 function fmtSupported(sup) {
@@ -84,6 +91,7 @@ export default function Page() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [runMode, setRunMode] = useState('auto');
   const [docketNo, setDocketNo] = useState('');
   const [history, setHistory] = useState([]);
   const [pending, setPending] = useState('');
@@ -99,7 +107,7 @@ export default function Page() {
     setPending(getPendingNo());
     if (!autoRan.current) {
       autoRan.current = true;
-      run(EXAMPLES[0].text);
+      run(EXAMPLES[0].text, 'replay');
     }
     return () => { mounted.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -122,18 +130,19 @@ export default function Page() {
     });
   }, []);
 
-  const run = useCallback(async (idea) => {
+  const run = useCallback(async (idea, mode = 'auto') => {
     const no = allocateDocketNo();
     setDocketNo(no);
     setPending(getPendingNo());
     setBusy(true);
     setError(null);
     setResult(null);
+    setRunMode(mode);
     try {
       const res = await fetch('/api/check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: idea, mode: 'auto' }),
+        body: JSON.stringify({ text: idea, mode }),
       });
       const data = await res.json();
       if (!mounted.current) return;
@@ -194,7 +203,7 @@ export default function Page() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 16, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {EXAMPLES.map((ex) => (
-              <button key={ex.label} type="button" className="chip-btn" disabled={busy} onClick={() => { setText(ex.text); run(ex.text); }}>
+              <button key={ex.label} type="button" className="chip-btn" disabled={busy} onClick={() => { setText(ex.text); run(ex.text, 'replay'); }}>
                 {ex.label}
               </button>
             ))}
@@ -325,7 +334,7 @@ export default function Page() {
             <p>{result.explanation.text}</p>
           </div>
 
-          <div className="docket-note mono">{sourceNote(result)}</div>
+          <div className="docket-note mono">{sourceNote(result, runMode)}</div>
         </section>
       )}
 
