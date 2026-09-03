@@ -253,9 +253,37 @@ body {
   margin-top: 16px; padding-top: 12px; border-top: 2px dashed var(--hairline);
 }
 
+/* auto-resolve note (no spot pair -> read futures, etc.) */
+.auto-note {
+  font-family: var(--font-plex), monospace; font-size: 11px; line-height: 1.6;
+  color: var(--hold); border-left: 2px solid var(--hold); padding-left: 9px;
+  margin: -2px 0 14px;
+}
+
+/* keep value columns from shoving names off-row on narrow widths */
+.check-name { min-width: 0; }
+.val-col { max-width: 56%; }
+.support-note { overflow-wrap: anywhere; }
+
 @media (max-width: 560px) {
   .wrap { padding: 34px 14px 70px; }
   .docket { padding: 18px 18px 20px; }
   .ledger-row { grid-template-columns: 72px 1fr auto; }
   .l-time { display: none; }
+  .docket-meta { font-size: 11px; }
+  .check-row { gap: 10px; padding: 10px 0; }
+  .val { font-size: 12px; }
+  .support-note { font-size: 10px; }
+  .check-name { font-size: 13.5px; }
+  .verdict { gap: 18px; }
+  .verdict-copy { min-width: 0; flex-basis: 100%; }
+  .stamp-wrap { margin: 2px 0 0 auto; }
+  .stamp-cap { font-size: 9px; }
+}
+
+@media (max-width: 380px) {
+  .mast-meta { text-align: left; }
+  .check-num { width: 18px; }
+  .mark { width: 26px; }
+  .err-msg { font-size: 13px; }
 }

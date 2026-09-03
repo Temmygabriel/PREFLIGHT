@@ -34,6 +34,9 @@ const VERDICT = {
 
 const CONF_LABEL = { High: 'HIGH', Medium: 'MEDIUM', Low: 'LOW' };
 const DOCKET_KEY = 'preflight:docketno';
+// Only spot <-> USDⓈ-M ever auto-resolve; mirror of the server's OTHER_MARKET.
+const MARKET_KEY_LABEL = { spot: 'spot', futures_usds: 'futures (USDⓈ-M)' };
+const OPPOSITE_MARKET = { spot: 'futures_usds', futures_usds: 'spot' };
 
 function pad4(n) { return String(n).padStart(4, '0'); }
 function readCounter() { try { return parseInt(localStorage.getItem(DOCKET_KEY) || '416', 10) || 416; } catch { return 416; } }
@@ -135,7 +138,7 @@ export default function Page() {
       const data = await res.json();
       if (!mounted.current) return;
       if (!res.ok || !data.ok) {
-        setError({ message: data.message || 'Preflight could not complete the check.', supported: data.supported });
+        setError({ code: data.code || 'error', marketMissing: Boolean(data.marketMissing), symbol: data.symbol || '', message: data.message || 'Preflight could not complete the check.', supported: data.supported });
         pushHistory(no, idea, null);
         setBusy(false);
         return;
@@ -145,7 +148,7 @@ export default function Page() {
       setBusy(false);
     } catch (e) {
       if (!mounted.current) return;
-      setError({ message: 'Network error — could not reach the Preflight API.' });
+      setError({ code: 'network', marketMissing: false, message: 'Network error — could not reach the Preflight API.' });
       pushHistory(no, idea, null);
       setBusy(false);
     }
@@ -231,7 +234,15 @@ export default function Page() {
           </div>
           <div className="err-title">Preflight could not run that check.</div>
           <div className="err-msg">{error.message}</div>
-          {error.supported && <div className="err-supp mono">{fmtSupported(error.supported)}</div>}
+          {error.code === 'live_failed' && error.marketMissing && (
+            <div className="err-supp mono">Preflight already tried both spot and futures — Binance reports no {error.symbol || 'this pair'} market. Double-check the ticker, or add “spot” / “perp” if the pair exists on only one market.</div>
+          )}
+          {error.code === 'live_failed' && !error.marketMissing && (
+            <div className="err-supp mono">The live feed could not be read right now. Re-run the check, or click the example chips — those replay real captured snapshots and always work.</div>
+          )}
+          {error.supported && error.code !== 'live_failed' && error.code !== 'network' && (
+            <div className="err-supp mono">{fmtSupported(error.supported)}</div>
+          )}
         </section>
       )}
 
@@ -254,6 +265,12 @@ export default function Page() {
               {result.source === 'live' ? '● LIVE' : '◌ REPLAYED'}
             </span>
           </div>
+
+          {result.autoMarket && (
+            <div className="auto-note mono">
+              No {MARKET_KEY_LABEL[OPPOSITE_MARKET[result.idea.market]] || 'other'} pair on Binance — Preflight read {result.idea.marketLabel} instead.
+            </div>
+          )}
 
           {/* checklist */}
           <div>
